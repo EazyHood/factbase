@@ -1,0 +1,31 @@
+name: Validate Factbase regressions
+on:
+  push:
+    branches: [verify-20261112-factbase-regressions]
+permissions:
+  contents: read
+jobs:
+  ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        issue: [1700, 1391, 1396, 1398, 1389]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Run the suite and each deliberate regression
+        env:
+          ISSUE: ${{ matrix.issue }}
+        run: |
+          export BUNDLE_PATH="$GITHUB_WORKSPACE/vendor/bundle"
+          git worktree add --detach "$RUNNER_TEMP/candidate" HEAD^
+          cd "$RUNNER_TEMP/candidate"
+          python "$GITHUB_WORKSPACE/.github/validation/regressions.py"

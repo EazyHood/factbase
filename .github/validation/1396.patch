@@ -1,0 +1,84 @@
+diff --git a/test/factbase/cached/test_cached_factbase.rb b/test/factbase/cached/test_cached_factbase.rb
+index 6ee4fdd..08a17a1 100644
+--- a/test/factbase/cached/test_cached_factbase.rb
++++ b/test/factbase/cached/test_cached_factbase.rb
+@@ -13,6 +13,16 @@ require_relative '../../test__helper'
+ # Copyright:: Copyright (c) 2024-2026 Yegor Bugayenko
+ # License:: MIT
+ class TestCachedFactbase < Factbase::Test
++  def test_preserves_the_decorator_inside_a_transaction
++    fb = Factbase::CachedFactbase.new(Factbase.new)
++    fb.txn do |txn|
++      assert_instance_of(Factbase::CachedFactbase, txn)
++      txn.insert.x = 42
++      assert_equal([42], txn.query('(always)').map(&:x))
++    end
++    assert_equal([42], fb.query('(always)').map(&:x))
++  end
++
+   def test_inserts_and_queries
+     fb = Factbase::CachedFactbase.new(Factbase.new)
+     f = fb.insert
+diff --git a/test/factbase/sync/test_sync_factbase.rb b/test/factbase/sync/test_sync_factbase.rb
+index 7ec5270..d002373 100644
+--- a/test/factbase/sync/test_sync_factbase.rb
++++ b/test/factbase/sync/test_sync_factbase.rb
+@@ -13,6 +13,16 @@ require_relative '../../test__helper'
+ # Copyright:: Copyright (c) 2024-2026 Yegor Bugayenko
+ # License:: MIT
+ class TestSyncFactbase < Factbase::Test
++  def test_preserves_the_decorator_inside_a_transaction
++    fb = Factbase::SyncFactbase.new(Factbase.new)
++    fb.txn do |txn|
++      assert_instance_of(Factbase::SyncFactbase, txn)
++      txn.insert.x = 42
++      assert_equal([42], txn.query('(always)').map(&:x))
++    end
++    assert_equal([42], fb.query('(always)').map(&:x))
++  end
++
+   def test_queries_and_inserts
+     fb = Factbase::SyncFactbase.new(Factbase.new)
+     fb.insert.foo = 42
+diff --git a/test/factbase/test_impatient.rb b/test/factbase/test_impatient.rb
+index adc18e2..60a0c04 100644
+--- a/test/factbase/test_impatient.rb
++++ b/test/factbase/test_impatient.rb
+@@ -15,6 +15,16 @@ require_relative '../test__helper'
+ # Copyright:: Copyright (c) 2024-2026 Yegor Bugayenko
+ # License:: MIT
+ class TestImpatient < Factbase::Test
++  def test_preserves_the_decorator_inside_a_transaction
++    fb = Factbase::Impatient.new(Factbase.new)
++    fb.txn do |txn|
++      assert_instance_of(Factbase::Impatient, txn)
++      txn.insert.x = 42
++      assert_equal([42], txn.query('(always)').map(&:x))
++    end
++    assert_equal([42], fb.query('(always)').map(&:x))
++  end
++
+   class SlowFactbase < Factbase
+     class SlowQuery < Factbase::Query
+       def one(fb = @fb, params = {})
+diff --git a/test/factbase/test_logged.rb b/test/factbase/test_logged.rb
+index c890909..35381c6 100644
+--- a/test/factbase/test_logged.rb
++++ b/test/factbase/test_logged.rb
+@@ -14,6 +14,16 @@ require_relative '../../lib/factbase/logged'
+ # Copyright:: Copyright (c) 2024-2026 Yegor Bugayenko
+ # License:: MIT
+ class TestLogged < Factbase::Test
++  def test_preserves_the_decorator_inside_a_transaction
++    fb = Factbase::Logged.new(Factbase.new, Loog::NULL)
++    fb.txn do |txn|
++      assert_instance_of(Factbase::Logged, txn)
++      txn.insert.x = 42
++      assert_equal([42], txn.query('(always)').map(&:x))
++    end
++    assert_equal([42], fb.query('(always)').map(&:x))
++  end
++
+   # A log that keeps the level of every message, unlike Loog::Buffer.
+   class Recorder
+     attr_reader :lines
