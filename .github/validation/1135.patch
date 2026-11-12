@@ -1,0 +1,44 @@
+diff --git a/lib/factbase/query.rb b/lib/factbase/query.rb
+index 8cb115a..cc360a1 100644
+--- a/lib/factbase/query.rb
++++ b/lib/factbase/query.rb
+@@ -94,14 +94,15 @@ class Factbase::Query
+   def delete!(fb = @fb)
+     @term.forget
+     deleted = 0
+-    maybe = (@term.predict(@maps, fb, Factbase::Tee.new({}, {})) || @maps).to_a.dup
++    predicted = @term.predict(@maps, fb, Factbase::Tee.new({}, {}))
+     before = @maps.to_a.dup
++    remaining = (predicted || before).to_a.tally
+     @maps.delete_if do |m|
+-      pos = maybe.index { |c| c.eql?(m) }
+-      d = !pos.nil? && @term.evaluate(Factbase::Accum.new(Factbase::Fact.new(m), {}, false), before, fb)
+-      maybe.delete_at(pos) if d
+-      deleted += 1 if d
+-      d
++      next false if remaining.fetch(m, 0).zero?
++      next false unless @term.evaluate(Factbase::Accum.new(Factbase::Fact.new(m), {}, false), before, fb)
++      remaining[m] -= 1
++      deleted += 1
++      true
+     end
+     deleted
+   end
+diff --git a/test/factbase/test_query.rb b/test/factbase/test_query.rb
+index 4f90580..851a58a 100644
+--- a/test/factbase/test_query.rb
++++ b/test/factbase/test_query.rb
+@@ -414,6 +414,13 @@ class TestQuery < Factbase::Test
+     assert_equal(0, fb.size)
+   end
+ 
++  def test_consumes_only_one_of_two_equal_candidates_selected_by_head
++    fb = Factbase.new
++    2.times { fb.insert.foo = 7 }
++    assert_equal(1, fb.query('(head 1 (eq foo 7))').delete!)
++    assert_equal([[7]], fb.each.to_a.map { |map| map['foo'] })
++  end
++
+   def test_deletes_by_agg_over_all_facts
+     fb = Factbase.new
+     [['trip', 20], ['food', 3], ['food', 3], ['food', 3]].each do |c, v|
