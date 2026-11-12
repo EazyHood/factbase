@@ -1,0 +1,103 @@
+diff --git a/lib/factbase/logged.rb b/lib/factbase/logged.rb
+index 4460347..88fbe64 100644
+--- a/lib/factbase/logged.rb
++++ b/lib/factbase/logged.rb
+@@ -79,6 +79,9 @@ class Factbase::Logged
+       @tube.say(mono, "Txn ##{id} touched #{r} in #{start.ago}")
+     end
+     r
++  rescue StandardError => e
++    @tube.say(mono, "Txn ##{id} failed with #{e.class} in #{start.ago}")
++    raise
+   end
+ 
+   # Printer of log messages.
+@@ -189,6 +192,9 @@ class Factbase::Logged
+         @tube.say(mono, "Found #{r}/#{total} fact(s) by #{q} #{tail}")
+       end
+       r
++    rescue StandardError => e
++      @tube.say(mono, "Query #{@termtext} each failed with #{e.class}")
++      raise
+     end
+ 
+     def one(fb = @fb, params = {})
+@@ -207,6 +213,9 @@ class Factbase::Logged
+         )
+       end
+       r
++    rescue StandardError => e
++      @tube.say(mono, "Query #{@termtext} one failed with #{e.class}")
++      raise
+     end
+ 
+     def delete!(fb = @fb)
+@@ -226,6 +235,9 @@ class Factbase::Logged
+         @tube.say(mono, "Deleted #{r} fact(s) out of #{before} by #{@term} #{tail}")
+       end
+       r
++    rescue StandardError => e
++      @tube.say(mono, "Query #{@termtext} delete! failed with #{e.class}")
++      raise
+     end
+ 
+     private
+diff --git a/test/factbase/test_logged.rb b/test/factbase/test_logged.rb
+index c890909..f33755c 100644
+--- a/test/factbase/test_logged.rb
++++ b/test/factbase/test_logged.rb
+@@ -141,6 +141,54 @@ class TestLogged < Factbase::Test
+     refute_includes(log.to_s, 'didn\'t touch', log)
+   end
+ 
++  def test_logs_a_failed_transaction_and_preserves_the_exception
++    log = Loog::Buffer.new
++    fb = Factbase::Logged.new(Factbase.new, log)
++    failure = RuntimeError.new('transaction failure')
++    assert_same(
++      failure,
++      assert_raises(RuntimeError) do
++        fb.txn do |txn|
++          txn.insert.foo = 42
++          raise(failure)
++        end
++      end
++    )
++    assert_equal(0, fb.size)
++    assert_includes(log.to_s, 'Txn #')
++    assert_includes(log.to_s, 'failed with RuntimeError')
++    refute_includes(log.to_s, 'touched')
++  end
++
++  def test_logs_failures_in_all_query_operations
++    { each: '(eq 1 (div 1 0))', one: '(div 1 0)', delete!: '(eq 1 (div 1 0))' }.each do |method, query|
++      log = Loog::Buffer.new
++      fb = Factbase::Logged.new(Factbase.new, log)
++      fb.insert.foo = 42
++      assert_includes(
++        assert_raises(Factbase::Term::Wrapped) do
++          fb.query(query).public_send(method) { |fact| fact.foo }
++        end.message,
++        'Cannot divide by zero'
++      )
++      assert_includes(log.to_s, "Query #{query} #{method} failed with Factbase::Term::Wrapped")
++      assert_equal(1, fb.size)
++    end
++  end
++
++  def test_logs_a_consumer_failure_and_preserves_the_exception
++    log = Loog::Buffer.new
++    fb = Factbase::Logged.new(Factbase.new, log)
++    fb.insert.foo = 1
++    fb.insert.foo = 42
++    failure = RuntimeError.new('consumer failure')
++    assert_same(
++      failure,
++      assert_raises(RuntimeError) { fb.query('(always)').each { |fact| raise(failure) if fact.foo == 42 } }
++    )
++    assert_includes(log.to_s, 'Query (always) each failed with RuntimeError')
++  end
++
+   def test_with_txn_thrown_rollback
+     log = Loog::Buffer.new
+     fb = Factbase::Logged.new(Factbase.new, log)
