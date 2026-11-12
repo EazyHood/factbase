@@ -1,0 +1,73 @@
+diff --git a/lib/factbase/indexed/indexed_gt.rb b/lib/factbase/indexed/indexed_gt.rb
+index 430c64d..32ef996 100644
+--- a/lib/factbase/indexed/indexed_gt.rb
++++ b/lib/factbase/indexed/indexed_gt.rb
+@@ -75,7 +75,7 @@ class Factbase::IndexedGt
+   end
+ 
+   def sortable?(maps, prop)
+-    maps.to_a.flat_map { |fact| fact[prop] || [] }.sort!
++    maps.to_a.flat_map { |fact| fact[prop] || [] }.minmax
+     true
+   rescue ArgumentError
+     false
+diff --git a/lib/factbase/indexed/indexed_gte.rb b/lib/factbase/indexed/indexed_gte.rb
+index 3516b2a..80efdd5 100644
+--- a/lib/factbase/indexed/indexed_gte.rb
++++ b/lib/factbase/indexed/indexed_gte.rb
+@@ -75,7 +75,7 @@ class Factbase::IndexedGte
+   end
+ 
+   def sortable?(maps, prop)
+-    maps.to_a.flat_map { |fact| fact[prop] || [] }.sort!
++    maps.to_a.flat_map { |fact| fact[prop] || [] }.minmax
+     true
+   rescue ArgumentError
+     false
+diff --git a/lib/factbase/indexed/indexed_lt.rb b/lib/factbase/indexed/indexed_lt.rb
+index 30d45a0..a56603f 100644
+--- a/lib/factbase/indexed/indexed_lt.rb
++++ b/lib/factbase/indexed/indexed_lt.rb
+@@ -75,7 +75,7 @@ class Factbase::IndexedLt
+   end
+ 
+   def sortable?(maps, prop)
+-    maps.to_a.flat_map { |fact| fact[prop] || [] }.sort!
++    maps.to_a.flat_map { |fact| fact[prop] || [] }.minmax
+     true
+   rescue ArgumentError
+     false
+diff --git a/lib/factbase/indexed/indexed_lte.rb b/lib/factbase/indexed/indexed_lte.rb
+index 1ff5830..31900bf 100644
+--- a/lib/factbase/indexed/indexed_lte.rb
++++ b/lib/factbase/indexed/indexed_lte.rb
+@@ -75,7 +75,7 @@ class Factbase::IndexedLte
+   end
+ 
+   def sortable?(maps, prop)
+-    maps.to_a.flat_map { |fact| fact[prop] || [] }.sort!
++    maps.to_a.flat_map { |fact| fact[prop] || [] }.minmax
+     true
+   rescue ArgumentError
+     false
+diff --git a/test/factbase/indexed/test_indexed_factbase.rb b/test/factbase/indexed/test_indexed_factbase.rb
+index 47335c5..b601b81 100644
+--- a/test/factbase/indexed/test_indexed_factbase.rb
++++ b/test/factbase/indexed/test_indexed_factbase.rb
+@@ -15,6 +15,16 @@ require_relative '../../test__helper'
+ # Copyright:: Copyright (c) 2024-2026 Yegor Bugayenko
+ # License:: MIT
+ class TestIndexedFactbase < Factbase::Test
++  def test_rechecks_comparability_when_a_scoped_map_is_replaced
++    %w[gt gte lt lte].each do |operator|
++      maps = [{ 'x' => [1] }, { 'x' => [2] }]
++      fb = Factbase::IndexedFactbase.new(Factbase.new)
++      fb.query("(#{operator} x 0)", maps).to_a
++      maps[1] = { 'x' => ['incomparable'] }
++      assert_raises(Factbase::Term::Wrapped) { fb.query("(#{operator} x 0)", maps).to_a }
++    end
++  end
++
+   def test_queries_after_update
+     origin = Factbase.new
+     fb = Factbase::IndexedFactbase.new(origin)
