@@ -1,0 +1,28 @@
+diff --git a/test/factbase/test_syntax.rb b/test/factbase/test_syntax.rb
+index 843b929..15e214a 100644
+--- a/test/factbase/test_syntax.rb
++++ b/test/factbase/test_syntax.rb
+@@ -242,6 +242,23 @@ class TestSyntax < Factbase::Test
+     end
+   end
+ 
++  def test_explains_empty_and_non_term_queries
++    {
++      '' => 'No tokens',
++      '   ' => 'No tokens',
++      '# only a comment' => 'No tokens',
++      '()' => 'No token found',
++      '(and ())' => 'No token found',
++      ')' => 'Closing too soon',
++      '42' => 'is not an instance of Term',
++      "'hello'" => 'is not an instance of Term',
++      'x' => 'is not an instance of Term'
++    }.each do |query, message|
++      error = assert_raises(Factbase::Syntax::Broken) { Factbase::Syntax.new(query).to_term }
++      assert_includes(error.message, message, query.inspect)
++    end
++  end
++
+   def test_broken_syntax
+     [
+       '',
