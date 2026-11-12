@@ -1,0 +1,93 @@
+diff --git a/lib/factbase.rb b/lib/factbase.rb
+index 94d3f54..9960817 100644
+--- a/lib/factbase.rb
++++ b/lib/factbase.rb
+@@ -5,6 +5,7 @@
+ 
+ require 'English'
+ require 'json'
++require 'set'
+ require 'yaml'
+ 
+ # A factbase, which essentially is a NoSQL one-table in-memory database
+@@ -198,14 +199,19 @@ class Factbase
+     done = true
+     seen = {}.compare_by_identity
+     garbage = {}.compare_by_identity
+-    taped.deleted.each do |oid|
+-      original = @maps.find { |m| m.object_id == oid }
+-      next if original.nil?
+-      garbage[original] = true
+-      churn.append(0, 1, 0)
++    deleted = taped.deleted.to_set
++    unless deleted.empty?
++      @maps.each do |original|
++        next unless deleted.delete?(original.object_id)
++        garbage[original] = true
++        churn.append(0, 1, 0)
++      end
+     end
+-    taped.inserted.each do |oid|
+-      b = taped.find_by_object_id(oid)
++    inserted = taped.inserted
++    added = taped.added
++    changed = taped.lookup(inserted + added)
++    inserted.each do |oid|
++      b = changed[oid]
+       next if b.nil?
+       next if seen.key?(b)
+       seen[b] = true
+@@ -213,8 +219,8 @@ class Factbase
+       churn.append(1, 0, 0)
+     end
+     positions = nil
+-    taped.added.each do |oid|
+-      b = taped.find_by_object_id(oid)
++    added.each do |oid|
++      b = changed[oid]
+       next if b.nil?
+       next if seen.key?(b)
+       original = taped.source_of(b)
+diff --git a/lib/factbase/lazy_taped.rb b/lib/factbase/lazy_taped.rb
+index 12eedd3..6355488 100644
+--- a/lib/factbase/lazy_taped.rb
++++ b/lib/factbase/lazy_taped.rb
+@@ -58,6 +58,17 @@ class Factbase::LazyTaped
+     r
+   end
+ 
++  # Resolve the journal's object IDs against the final transaction contents.
++  # An insert-only transaction needs only its staged facts.
++  def lookup(ids)
++    return {} if ids.empty?
++    maps = @staged.to_h { |m| [m.object_id, m] }
++    unless copied? || ids.all? { |oid| maps.key?(oid) }
++      maps.merge!(@origin.to_h { |m| [m.object_id, m] })
++    end
++    maps
++  end
++
+   def size
+     copied? ? @staged.size : (@origin.size + @staged.size)
+   end
+diff --git a/test/test_factbase.rb b/test/test_factbase.rb
+index abff7a2..1ccc9a1 100644
+--- a/test/test_factbase.rb
++++ b/test/test_factbase.rb
+@@ -328,6 +328,16 @@ class TestFactbase < Factbase::Test
+     assert_equal(1, fb.query('(eq foo 1)').each.to_a.size)
+   end
+ 
++  def test_counts_inserted_facts_once_after_modifying_them_in_txn
++    fb = Factbase.new
++    changes = fb.txn do |txn|
++      10.times { |id| txn.insert.id = id }
++      txn.query('(always)').each { |fact| fact.ready = true }
++    end
++    assert_equal('10i/0d/0a', changes.to_s)
++    assert_equal(10, fb.query('(eq ready true)').count)
++  end
++
+   def test_keeps_order_when_modifying_a_fact_in_txn
+     fb = Factbase.new
+     3.times { |i| fb.insert.then { |f| f.num = i } }
