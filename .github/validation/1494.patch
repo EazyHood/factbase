@@ -1,0 +1,60 @@
+diff --git a/lib/factbase/tallied.rb b/lib/factbase/tallied.rb
+index 903fbca..55d468a 100644
+--- a/lib/factbase/tallied.rb
++++ b/lib/factbase/tallied.rb
+@@ -36,10 +36,10 @@ class Factbase::Tallied
+   end
+ 
+   def import(bytes)
+-    probe = Factbase.new
+-    probe.import(bytes)
+-    @fb.import(bytes)
+-    @churn.append(probe.size, 0, 0)
++    @fb.size.then do |before|
++      @fb.import(bytes)
++      @churn.append(@fb.size - before, 0, 0)
++    end
+   end
+ 
+   def txn
+diff --git a/test/factbase/test_tallied.rb b/test/factbase/test_tallied.rb
+index ad1ab1b..cde71ad 100644
+--- a/test/factbase/test_tallied.rb
++++ b/test/factbase/test_tallied.rb
+@@ -117,6 +117,36 @@ class TestTallied < Factbase::Test
+     assert_equal(3, fb.churn.inserted, 'Imported facts must be counted as inserted')
+   end
+ 
++  def test_decodes_an_import_once_and_counts_only_new_facts
++    origin = Factbase.new
++    origin.insert.foo = 0
++    fb = Factbase::Tallied.new(origin)
++    bytes = Marshal.dump([{ 'foo' => [1] }, { 'foo' => [2] }])
++    loads = 0
++    trace =
++      TracePoint.new(:call, :c_call) do |event|
++        loads += 1 if event.self.equal?(Marshal) && event.method_id == :load
++      end
++    trace.enable { fb.import(bytes) }
++    assert_equal(1, loads)
++    assert_equal(3, fb.size)
++    assert_equal('2i/0d/0a', fb.churn.to_s)
++  end
++
++  def test_preserves_churn_when_an_import_fails
++    fb = Factbase::Tallied.new(Factbase.new)
++    fb.insert.foo = 1
++    assert_raises(StandardError) { fb.import('invalid') }
++    assert_equal(1, fb.size)
++    assert_equal('1i/0d/1a', fb.churn.to_s)
++  end
++
++  def test_counts_an_empty_import_as_no_change
++    fb = Factbase::Tallied.new(Factbase.new)
++    fb.import(Marshal.dump([]))
++    assert_predicate(fb.churn, :zero?)
++  end
++
+   def test_counts_churn_in_one_with_default_context
+     n = :_churn_in_one_default
+     Factbase::Term.new(:defn, [n, 'fb.insert.value = 2; fb.size']).evaluate(nil, [], Factbase.new)
