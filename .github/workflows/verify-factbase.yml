@@ -1,0 +1,39 @@
+name: Validate Factbase candidates
+on:
+  push:
+    branches: [verify-20261112-factbase-performance-2]
+permissions:
+  contents: read
+jobs:
+  ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        issue: [1131, 1135, 1640]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Compare the original and patched behavior
+        env:
+          ISSUE: ${{ matrix.issue }}
+        run: |
+          set -eu
+          export BUNDLE_PATH="$GITHUB_WORKSPACE/vendor/bundle"
+          git worktree add --detach "$RUNNER_TEMP/candidate" HEAD^
+          cd "$RUNNER_TEMP/candidate"
+          bundle check || bundle install
+          PATCH="$GITHUB_WORKSPACE/.github/validation/$ISSUE.patch"
+          RUN="$GITHUB_WORKSPACE/.github/validation/$ISSUE.rb"
+          if [ -f "$RUN" ]; then bundle exec ruby -Ilib "$RUN"; fi
+          git apply "$PATCH"
+          if [ -f "$RUN" ]; then bundle exec ruby -Ilib "$RUN"; fi
+          bundle exec rubocop $(git diff --name-only)
+          bundle exec rake test

@@ -1,0 +1,60 @@
+diff --git a/lib/factbase/query.rb b/lib/factbase/query.rb
+index 8cb115a..b7e5241 100644
+--- a/lib/factbase/query.rb
++++ b/lib/factbase/query.rb
+@@ -94,12 +94,12 @@ class Factbase::Query
+   def delete!(fb = @fb)
+     @term.forget
+     deleted = 0
+-    maybe = (@term.predict(@maps, fb, Factbase::Tee.new({}, {})) || @maps).to_a.dup
++    maybe = @term.predict(@maps, fb, Factbase::Tee.new({}, {}))&.to_a&.dup
+     before = @maps.to_a.dup
+     @maps.delete_if do |m|
+-      pos = maybe.index { |c| c.eql?(m) }
+-      d = !pos.nil? && @term.evaluate(Factbase::Accum.new(Factbase::Fact.new(m), {}, false), before, fb)
+-      maybe.delete_at(pos) if d
++      pos = maybe&.index { |c| c.eql?(m) }
++      d = (maybe.nil? || !pos.nil?) && @term.evaluate(Factbase::Accum.new(Factbase::Fact.new(m), {}, false), before, fb)
++      maybe.delete_at(pos) if d && maybe
+       deleted += 1 if d
+       d
+     end
+diff --git a/test/factbase/test_query.rb b/test/factbase/test_query.rb
+index 4f90580..dbc9ff9 100644
+--- a/test/factbase/test_query.rb
++++ b/test/factbase/test_query.rb
+@@ -23,6 +23,20 @@ require_relative '../../lib/factbase/tallied'
+ # Copyright:: Copyright (c) 2024-2026 Yegor Bugayenko
+ # License:: MIT
+ class TestQuery < Factbase::Test
++  def test_deletes_with_a_term_that_modifies_its_fact
++    name = :modify_during_deletion
++    fb = Factbase.new
++    fb.insert.x = 1
++    Factbase::Term.new(:defn, [name, "fb.query('(eq x 1)').each { |row| row.changed = 1 }; true"])
++      .evaluate(nil, [], fb)
++    begin
++      assert_equal(1, fb.query("(#{name})").delete!)
++      assert_equal(0, fb.size)
++    ensure
++      Factbase::Term.new(:undef, [name]).evaluate(nil, [], fb)
++    end
++  end
++
+   def test_stories
+     with_factbases do |badge, fb|
+       Dir[File.join(__dir__, '../../fixtures/stories/**/*.yml')].each do |fixture|
+@@ -414,6 +428,13 @@ class TestQuery < Factbase::Test
+     assert_equal(0, fb.size)
+   end
+ 
++  def test_consumes_only_one_of_two_equal_candidates_selected_by_head
++    fb = Factbase.new
++    2.times { fb.insert.foo = 7 }
++    assert_equal(1, fb.query('(head 1 (eq foo 7))').delete!)
++    assert_equal([[7]], fb.each.to_a.map { |map| map['foo'] })
++  end
++
+   def test_deletes_by_agg_over_all_facts
+     fb = Factbase.new
+     [['trip', 20], ['food', 3], ['food', 3], ['food', 3]].each do |c, v|

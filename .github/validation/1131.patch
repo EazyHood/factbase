@@ -1,0 +1,64 @@
+diff --git a/lib/factbase.rb b/lib/factbase.rb
+index 94d3f54..9aa8e5d 100644
+--- a/lib/factbase.rb
++++ b/lib/factbase.rb
+@@ -198,14 +198,19 @@ class Factbase
+     done = true
+     seen = {}.compare_by_identity
+     garbage = {}.compare_by_identity
+-    taped.deleted.each do |oid|
+-      original = @maps.find { |m| m.object_id == oid }
+-      next if original.nil?
+-      garbage[original] = true
+-      churn.append(0, 1, 0)
++    deleted = taped.deleted.to_set
++    unless deleted.empty?
++      @maps.each do |original|
++        next unless deleted.delete?(original.object_id)
++        garbage[original] = true
++        churn.append(0, 1, 0)
++      end
+     end
+-    taped.inserted.each do |oid|
+-      b = taped.find_by_object_id(oid)
++    inserted = taped.inserted
++    added = taped.added
++    changed = taped.lookup(inserted + added)
++    inserted.each do |oid|
++      b = changed[oid]
+       next if b.nil?
+       next if seen.key?(b)
+       seen[b] = true
+@@ -213,8 +218,8 @@ class Factbase
+       churn.append(1, 0, 0)
+     end
+     positions = nil
+-    taped.added.each do |oid|
+-      b = taped.find_by_object_id(oid)
++    added.each do |oid|
++      b = changed[oid]
+       next if b.nil?
+       next if seen.key?(b)
+       original = taped.source_of(b)
+diff --git a/lib/factbase/lazy_taped.rb b/lib/factbase/lazy_taped.rb
+index 12eedd3..6355488 100644
+--- a/lib/factbase/lazy_taped.rb
++++ b/lib/factbase/lazy_taped.rb
+@@ -58,6 +58,17 @@ class Factbase::LazyTaped
+     r
+   end
+ 
++  # Resolve the journal's object IDs against the final transaction contents.
++  # An insert-only transaction needs only its staged facts.
++  def lookup(ids)
++    return {} if ids.empty?
++    maps = @staged.to_h { |m| [m.object_id, m] }
++    unless copied? || ids.all? { |oid| maps.key?(oid) }
++      maps.merge!(@origin.to_h { |m| [m.object_id, m] })
++    end
++    maps
++  end
++
+   def size
+     copied? ? @staged.size : (@origin.size + @staged.size)
+   end
