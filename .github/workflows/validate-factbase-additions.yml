@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Yegor Bugayenko
+# SPDX-License-Identifier: MIT
+---
+name: Validate Factbase additions
+'on':
+  push:
+    branches: ['validate-20261113-factbase-*']
+permissions:
+  contents: read
+jobs:
+  ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        issue: [1350, 1356]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Reproduce on base and validate the complete change
+        env:
+          ISSUE: ${{ matrix.issue }}
+        run: |
+          set -euo pipefail
+          export BUNDLE_PATH="$GITHUB_WORKSPACE/vendor/bundle"
+          git worktree add --detach "$RUNNER_TEMP/candidate" HEAD^
+          cd "$RUNNER_TEMP/candidate"
+          bundle check || bundle install
+          patch="$GITHUB_WORKSPACE/.github/validation/$ISSUE.patch"
+          if [ "$ISSUE" = 1350 ]; then
+            test=test/factbase/test_logged.rb
+          else
+            test=test/factbase/test_rules.rb
+          fi
+          git apply --include='test/*' "$patch"
+          set +e
+          PICKS=yes bundle exec ruby "$test" > "$RUNNER_TEMP/base-$ISSUE.log" 2>&1
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/base-$ISSUE.log"
+          test "$code" -ne 0
+          grep -Eq '[1-9][0-9]* failures, 0 errors' "$RUNNER_TEMP/base-$ISSUE.log"
+          git checkout -- "$test"
+          git apply "$patch"
+          bundle exec rake 2>&1 | tee "$RUNNER_TEMP/patched-$ISSUE.log"
+      - name: Save validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: factbase-${{ matrix.issue }}-validation
+          path: |
+            ${{ runner.temp }}/base-${{ matrix.issue }}.log
+            ${{ runner.temp }}/patched-${{ matrix.issue }}.log
